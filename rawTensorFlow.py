@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-
+import cPickle
 class Model():
     def __init__(self, max_output_length,max_input_length,embed_size, embeddings, hidden_size, n_classes, batch_size, lr):
         self.hidden_size = hidden_size
@@ -11,6 +11,7 @@ class Model():
         self.n_classes = n_classes
         self.batch_size = batch_size
         self.lr = lr
+        self.embeddings_var = tf.Variable(self.pretrained_embeddings)
     def create_placeholders(self):
         self.input_placeholder = tf.placeholder(tf.int32, (None, self.max_input_length))
         self.labels_placeholder = tf.placeholder(tf.int32, (None, self.max_output_length))
@@ -21,19 +22,20 @@ class Model():
         feed_dict = {
             self.input_placeholder : inputs_batch,
             self.mask_placeholder : mask_batch,
-            self.dropout_placeholder: dropout,
-            self.labels_placeholder: labels
+            self.dropout_placeholder: dropout
         }
+        if labels is not None:
+            feed_dict[self.labels_placeholder] = labels
         return feed_dict
 
     def add_embedding(self):
-        lookup = tf.nn.embedding_lookup(tf.Variable(self.pretrained_embeddings), self.input_placeholder)
+        lookup = tf.nn.embedding_lookup(self.embeddings_var, self.input_placeholder)
         embeddings = tf.reshape(lookup, (-1, self.max_input_length, self.embed_size))
         ### END YOUR CODE
         return embeddings
 
     def output_embedding(self):
-        lookup = tf.nn.embedding_lookup(tf.Variable(self.pretrained_embeddings), self.labels_placeholder)
+        lookup = tf.nn.embedding_lookup(self.embeddings_var, self.labels_placeholder)
         embeddings = tf.reshape(lookup, (-1, self.max_output_length, self.embed_size))
         ### END YOUR CODE
         return embeddings
@@ -58,19 +60,43 @@ class Model():
             if time_step > 0: tf.get_variable_scope().reuse_variables()
             o_t, h = EncoderCell(x[:,time_step,:], h)
 
+        decoderH = h
         for time_step in range(self.max_output_length):
             if time_step > 0: tf.get_variable_scope().reuse_variables()
-            o_t, h = EncoderCell(y[:,time_step,:], h)
+            if time_step == 0:
+                inputs = tf.zeros((self.batch_size, self.embed_size))
+            else:
+                inputs = y[:,time_step-1,:]
+            o_t, decoderH = DecoderCell(inputs, decoderH)
             o_drop_t = tf.nn.dropout(o_t, dropout_rate)
             y_t = tf.matmul(o_drop_t, U)+ b_2
             preds.append(y_t)
+
+        testPreds = []
+        decoderH = h
+        for time_step in range(self.max_output_length):
+            if time_step > 0: tf.get_variable_scope().reuse_variables()
+            if time_step == 0:
+                inputs = tf.zeros((self.batch_size, self.embed_size))
+            else:
+                inputs = tf.nn.embedding_lookup(self.embeddings_var,tf.argmax(testPreds[-1], 1))
+            o_t, decoderH = DecoderCell(inputs, decoderH)
+            o_drop_t = tf.nn.dropout(o_t, dropout_rate)
+            y_t = tf.matmul(o_drop_t, U)+ b_2
+            testPreds.append(y_t)
+
         # Make sure to reshape @preds here.
-        preds = tf.pack(preds,1)
+        preds = (tf.pack(preds,1), tf.pack(testPreds, 1))
         ### YOUR CODE HERE (~2-4 lines)
         ### END YOUR CODE
 
         #assert preds.get_shape().as_list() == [None, self.max_output_length, self.n_classes], "predictions are not of the right shape. Expected {}, got {}".format([None, self.max_output_length, self.n_classes], preds.get_shape().as_list())
         return preds
+
+    def convertToLabels(self, testPreds):
+        print testPreds
+        words = tf.argmax(testPreds, 2)
+        return words
 
     def add_loss_op(self, preds):
         """Adds Ops for the loss function to the computational graph.
@@ -122,20 +148,29 @@ def main():
     Y = np.load('Y')
     mask = np.load('outputMask')
     embeddings = np.load('embeddings').astype(np.float32)
-    model = Model(31,31,300, embeddings, 128, 30033, 10, 0.001)
+    model = Model(31,31,300, embeddings, 128, 30004, 10, 0.001)
     model.create_placeholders()
     preds = model.add_prediction_op()
-    loss = model.add_loss_op(preds)
+    loss = model.add_loss_op(preds[0])
     training_op = model.add_training_op(loss)
     init = tf.global_variables_initializer()
+    words = model.convertToLabels(preds[1])
     batch_size = 10
     count = 0
     with tf.Session() as sess:
         sess.run(init)
-        for i in range(int(X.shape[0]/batch_size)):
+        for i in range(int((X.shape[0]-1000)/batch_size)):
             feed = model.create_feed_dict(X[batch_size*i:batch_size*(i+1), :],mask[batch_size*i:batch_size*(i+1), :],1,Y[batch_size*i:batch_size*(i+1), :])
             newLoss, train = sess.run([loss,training_op], feed_dict = feed)
             print newLoss
             print count
             count += 1
+            if count == 1000:
+                break
+        labelsDict = cPickle.load(open('labelsDict'))
+        labelsDict = {labelsDict[key]:key for key in labelsDict}
+        for i in range(batch_size*count+2, batch_size*count + 10):
+            sent = sess.run(words, feed_dict =  model.create_feed_dict(X[batch_size*i:batch_size*(i+1), :],mask[batch_size*i:batch_size*(i+1), :],1,None))
+            print[[labelsDict[key] for key in arr] for arr in sent]
+
 main()
