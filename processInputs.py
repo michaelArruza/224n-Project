@@ -20,8 +20,9 @@ def convertToOutput(labels, review):
     tokens = nltk.tokenize.word_tokenize(review)
     tokensToLabels = [labels[x.lower()] if x in labels else labels['<Unk>'] for x in tokens]
     if len(tokensToLabels) < MAX_SENTENCE:
-        tokensToLabels +=  [labels['<EOR>']]+[30003 for i in range(MAX_SENTENCE - len(tokensToLabels))]
+        tokensToLabels +=  [labels['<EOR>']]
         outputMask.append([1 if tokensToLabels[i] != 30001 else 0 for i in range(len(tokensToLabels))]+[0 for i in range(MAX_SENTENCE - len(tokensToLabels)+1)])
+        tokensToLabels += [30003 for i in range(MAX_SENTENCE - len(tokensToLabels)+1)]
     elif len(tokensToLabels) >= MAX_SENTENCE:
         tokensToLabels = tokensToLabels[:MAX_SENTENCE] + [labels['<EOR>']]
         outputMask.append([1 if tokensToLabels[i] != 30001 else 0 for i in range(MAX_SENTENCE+1)])
@@ -39,16 +40,16 @@ def processInputs():
     for movie in reviews:
         critics = movie['_critics']
         for review in critics:
-            inputs.append( convertToLabels(labelsDict, critics[review]))
-            outputs.append(convertToOutput(labelsDict, movie['_critic_consensus']))
+            #inputs.append( convertToLabels(labelsDict, critics[review]))
+            #outputs.append(convertToOutput(labelsDict, movie['_critic_consensus']))
             convertToOutput(labelsDict, movie['_critic_consensus'])
 
             count += 1
             if count %1000 == 0:
                 print count
 
-    np.save(open('X','w'),np.array(inputs))
-    np.save(open('Y','w'),np.array(outputs))
+    #np.save(open('X','w'),np.array(inputs))
+    #np.save(open('Y','w'),np.array(outputs))
 
     mask = np.array(outputMask)
     print mask.shape
