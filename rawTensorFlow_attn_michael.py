@@ -190,7 +190,8 @@ def main():
     with tf.Session() as sess:
         sess.run(init)
         for j in range(5):
-            for i in range(30):
+            count = 0
+            for i in range(5):
                 feed = model.create_feed_dict(X[batch_size*i:batch_size*(i+1), :],mask[batch_size*i:batch_size*(i+1), :],0.8,Y[batch_size*i:batch_size*(i+1), :])
                 #feed = model.create_feed_dict(X[batch_size*i:batch_size*(i+1), :],Y[batch_size*i:batch_size*(i+1), :])
                 newLoss, train = sess.run([loss,training_op], feed_dict = feed)
